@@ -69,10 +69,10 @@
 
             addLog("Начало загрузки модели (createModel)...");
             model = await module.createModel(
-                "https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-ru-0.22.tar.gz",
-                "Russian",
-                "vosk-model-small-ru-0.22"
-            );
+    "https://github.com/alphacep/vosk-models/archive/refs/tags/vosk-model-small-ru-0.22.tar.gz",
+    "Russian",
+    "vosk-models-vosk-model-small-ru-0.22"
+);
             addLog(model ? "Модель createModel создана успешно." : "ОШИБКА: createModel вернула undefined.");
 
             addLog("Создание Recognizer...");
