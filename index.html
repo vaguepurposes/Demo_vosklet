@@ -2,95 +2,146 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Vosklet Russian Demo</title>
-    <script src="https://cdn.jsdelivr.net/gh/msqr1/Vosklet@1.2.1/Examples/Vosklet.js" async defer></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vosk Offline Speech RU</title>
+    <script src="https://cdn.jsdelivr.net/gh/msqr1/Vosklet@1.2.1/Examples/Vosklet.js"></script>
     <style>
-        body { font-family: sans-serif; padding: 20px; text-align: center; }
-        #status { color: #666; margin-bottom: 10px; }
-        #result { font-weight: bold; margin-top: 20px; font-size: 1.2em; color: #2c3e50; }
-        #partial { color: #7f8c8d; font-style: italic; }
-        button { padding: 10px 20px; cursor: pointer; font-size: 16px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; padding: 40px; background-color: #f4f7f6; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        #status { color: #555; margin-bottom: 20px; font-weight: bold; }
+        #result { font-size: 1.4em; color: #2c3e50; margin-top: 20px; min-height: 1.5em; }
+        #partial { color: #95a5a6; font-style: italic; font-size: 1.1em; margin-top: 5px; }
+        button { padding: 12px 25px; font-size: 18px; cursor: pointer; border-radius: 8px; border: none; transition: 0.3s; color: white; }
+        .btn-start { background-color: #27ae60; }
+        .btn-start:hover { background-color: #2ecc71; }
+        .btn-stop { background-color: #c0392b; }
+        .btn-stop:hover { background-color: #e74c3c; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
     </style>
-    
-    <script>
-      async function start() {
-        const status = document.getElementById("status");
-        const resultDiv = document.getElementById("result");
-        const partialDiv = document.getElementById("partial");
-        const startBtn = document.getElementById("startBtn");
-
-        try {
-            startBtn.disabled = true;
-            status.innerText = "Загрузка модели (около 45 МБ), подождите...";
-
-            // Создаем аудио-контекст
-            let ctx = new AudioContext({sinkId: {type: "none"}});
-
-            // Настройка микрофона
-            let stream = await navigator.mediaDevices.getUserMedia({
-                video: false,
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    channelCount: 1
-                },
-            });
-            let micNode = ctx.createMediaStreamSource(stream);
-
-            // Загрузка Vosklet
-            let module = await loadVosklet();
-            
-            // Заменяем на РУССКУЮ маленькую модель
-            let model = await module.createModel(
-                "https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-ru-0.22.tar.gz",
-                "Russian",
-                "vosk-model-small-ru-0.22"
-            );
-            
-            let recognizer = await module.createRecognizer(model, ctx.sampleRate);
-
-            status.innerText = "Слушаю...";
-
-            // Обработка финального результата
-            recognizer.addEventListener("result", ev => {
-                const text = ev.detail.text;
-                if(text) {
-                    resultDiv.innerText = "Распознано: " + text;
-                    partialDiv.innerText = ""; // Очищаем промежуточный
-                }
-            });
-
-            // Обработка промежуточных результатов
-            recognizer.addEventListener("partialResult", ev => {
-                const partialText = ev.detail.partial;
-                if(partialText) {
-                    partialDiv.innerText = partialText;
-                }
-            });
-
-            // Узел передачи данных
-            let transferer = await module.createTransferer(ctx, 128 * 150);
-            transferer.port.onmessage = ev => recognizer.acceptWaveform(ev.data);
-
-            micNode.connect(transferer);
-
-        } catch (err) {
-            console.error(err);
-            status.innerText = "Ошибка: " + err.message;
-            startBtn.disabled = false;
-        }
-      }
-    </script>
 </head>
 <body>
-    <h1>Распознавание речи (Vosk Offline)</h1>
-    <div id="status">Нажмите кнопку для запуска</div>
-    <button id="startBtn" onclick="start()">Запустить микрофон</button>
+
+<div class="container">
+    <h2>Распознавание речи (RU)</h2>
+    <div id="status">Нажмите кнопку для начала</div>
     
+    <button id="actionBtn" class="btn-start" onclick="toggleMic()">Запустить микрофон</button>
+
     <div id="result"></div>
     <div id="partial"></div>
+</div>
 
-    <hr style="margin-top: 40px;">
-    <p><small>Примечание: При первом запуске скачивается модель (~45МБ). Результаты выводятся в консоль браузера (F12) и на экран.</small></p>
+<script>
+    let recognitionActive = false;
+    let audioContext = null;
+    let micStream = null;
+    let model = null;
+    let recognizer = null;
+    let module = null;
+
+    async function toggleMic() {
+        const btn = document.getElementById("actionBtn");
+        const status = document.getElementById("status");
+
+        if (!recognitionActive) {
+            // ЗАПУСК
+            try {
+                btn.disabled = true;
+                status.innerText = "Проверка изоляции (COOP/COEP)...";
+
+                if (typeof SharedArrayBuffer === 'undefined') {
+                    throw new Error("SharedArrayBuffer не найден! Проверьте Headers на Render и обновите страницу через Ctrl+F5.");
+                }
+
+                status.innerText = "Доступ к микрофону...";
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+                });
+
+                audioContext = new AudioContext({ sinkId: { type: "none" } });
+                const micNode = audioContext.createMediaStreamSource(micStream);
+
+                if (!module) {
+                    status.innerText = "Загрузка движка Vosklet...";
+                    module = await loadVosklet();
+                }
+
+                if (!model) {
+                    status.innerText = "Загрузка русской модели (45МБ)...";
+                    model = await module.createModel(
+                        "https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-ru-0.22.tar.gz",
+                        "Russian",
+                        "vosk-model-small-ru-0.22"
+                    );
+                }
+
+                if (!model) throw new Error("Модель вернула undefined. Проверьте CORS или интернет.");
+
+                recognizer = await module.createRecognizer(model, audioContext.sampleRate);
+
+                const transferer = await module.createTransferer(audioContext, 128 * 150);
+                transferer.port.onmessage = ev => {
+                    if (recognizer) recognizer.acceptWaveform(ev.data);
+                };
+
+                recognizer.addEventListener("result", ev => {
+                    if (ev.detail && ev.detail.text) {
+                        document.getElementById("result").innerText = "Текст: " + ev.detail.text;
+                        document.getElementById("partial").innerText = "";
+                    }
+                });
+
+                recognizer.addEventListener("partialResult", ev => {
+                    if (ev.detail && ev.detail.partial) {
+                        document.getElementById("partial").innerText = ev.detail.partial;
+                    }
+                });
+
+                micNode.connect(transferer);
+                
+                recognitionActive = true;
+                btn.innerText = "Остановить микрофон";
+                btn.className = "btn-stop";
+                btn.disabled = false;
+                status.innerText = "Слушаю...";
+
+            } catch (err) {
+                console.error(err);
+                status.innerText = "Ошибка: " + err.message;
+                btn.disabled = false;
+                stopAll();
+            }
+        } else {
+            // ОСТАНОВКА
+            stopAll();
+        }
+    }
+
+    function stopAll() {
+        recognitionActive = false;
+        
+        // Останавливаем микрофон
+        if (micStream) {
+            micStream.getTracks().forEach(track => track.stop());
+            micStream = null;
+        }
+
+        // Закрываем аудио контекст
+        if (audioContext) {
+            audioContext.close();
+            audioContext = null;
+        }
+
+        // Очищаем распознаватель
+        recognizer = null;
+
+        const btn = document.getElementById("actionBtn");
+        btn.innerText = "Запустить микрофон";
+        btn.className = "btn-start";
+        document.getElementById("status").innerText = "Остановлено";
+        document.getElementById("partial").innerText = "";
+    }
+</script>
+
 </body>
 </html>
